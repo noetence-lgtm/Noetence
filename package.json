@@ -1,20 +1,27 @@
 {
-  "name": "noetence",
-  "private": true,
-  "version": "0.0.0",
-  "type": "module",
+  "name": "gemini-live-backend",
+  "version": "1.0.0",
+  "description": "Backend for Gemini Live Audio Chat",
+  "main": "dist/server.js",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "start": "node dist/server.js",
+    "build": "tsc",
+    "dev": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/server.ts"
   },
+  "author": "",
+  "license": "Apache-2.0",
   "dependencies": {
-    "@google/genai": "^0.14.0"
+    "@google/genai": "^0.14.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.9",
+    "@types/ws": "^8.5.10",
+    "nodemon": "^3.1.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.2"
   }
 }

@@ -2,7 +2,13 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import {GoogleGenAI, Modality, LiveServerMessage, Blob} from '@google/genai';
+
+// --- Custom Types ---
+// FIX: Renamed Blob to GeminiBlob to avoid conflict with the built-in DOM Blob type.
+interface GeminiBlob {
+  data: string;
+  mimeType: string;
+}
 
 // --- DOM elements ---
 const callButton = document.getElementById('call-button') as HTMLButtonElement;
@@ -25,12 +31,13 @@ const micOffIcon = `<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBo
 // --- State variables ---
 let isSessionActive = false;
 let isMuted = false;
-let sessionPromise: Promise<any> | null = null;
+let socket: WebSocket | null = null;
 let mediaStream: MediaStream | null = null;
 let scriptProcessor: ScriptProcessorNode | null = null;
 let mediaStreamSource: MediaStreamAudioSourceNode | null = null;
 let analyser: AnalyserNode | null = null;
 let animationFrameId: number | null = null;
+let smoothedDataArray: Uint8Array | null = null;
 
 // --- Audio contexts and helpers ---
 let nextStartTime = 0;
@@ -80,7 +87,8 @@ async function decodeAudioData(
   return buffer;
 }
 
-function createBlob(data: Float32Array): Blob {
+// FIX: Updated return type to GeminiBlob to match the custom interface.
+function createBlob(data: Float32Array): GeminiBlob {
   const l = data.length;
   const int16 = new Int16Array(l);
   for (let i = 0; i < l; i++) {
@@ -93,6 +101,8 @@ function createBlob(data: Float32Array): Blob {
 }
 
 // --- Audio Visualizer ---
+const SMOOTHING_FACTOR = 0.8;
+
 function drawVisualizer() {
   if (!analyser || !visualizerCtx || !isSessionActive || isMuted) {
     return;
@@ -100,27 +110,56 @@ function drawVisualizer() {
 
   animationFrameId = requestAnimationFrame(drawVisualizer);
 
-  const bufferLength = analyser.frequencyBinCount;
+  const bufferLength = analyser.frequencyBinCount; // e.g., 128
+  if (!smoothedDataArray) {
+    smoothedDataArray = new Uint8Array(bufferLength).fill(0);
+  }
   const dataArray = new Uint8Array(bufferLength);
   analyser.getByteFrequencyData(dataArray);
 
-  visualizerCtx.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+  visualizerCtx.clearRect(
+    0,
+    0,
+    visualizerCanvas.width,
+    visualizerCanvas.height,
+  );
 
-  const barWidth = (visualizerCanvas.width / bufferLength) * 2.5;
-  let barHeight;
-  let x = 0;
+  const gradient = visualizerCtx.createLinearGradient(
+    0,
+    visualizerCanvas.height,
+    0,
+    0,
+  );
+  gradient.addColorStop(0, '#32e0c4');
+  gradient.addColorStop(0.5, '#2575fc');
+  gradient.addColorStop(1, '#6a11cb');
+  visualizerCtx.fillStyle = gradient;
 
-  visualizerCtx.fillStyle = '#1877f2';
+  const barWidth = 4;
+  const spacing = 2;
+  const centerX = visualizerCanvas.width / 2;
+  const numBarsToDisplay = 64;
 
-  for (let i = 0; i < bufferLength; i++) {
-    barHeight = dataArray[i] / 2.8; // Scale it down
-    visualizerCtx.fillRect(
-      x,
-      visualizerCanvas.height - barHeight,
-      barWidth,
-      barHeight,
-    );
-    x += barWidth + 1; // Add 1 for spacing
+  for (let i = 0; i < numBarsToDisplay; i++) {
+    smoothedDataArray[i] =
+      smoothedDataArray[i] * SMOOTHING_FACTOR +
+      dataArray[i] * (1 - SMOOTHING_FACTOR);
+    const barHeight =
+      Math.pow(smoothedDataArray[i] / 255, 2) * visualizerCanvas.height;
+    if (barHeight > 1) {
+      visualizerCtx.fillRect(
+        centerX + i * (barWidth + spacing),
+        visualizerCanvas.height - barHeight,
+        barWidth,
+        barHeight,
+      );
+      visualizerCtx.fillRect(
+        centerX - (i + 1) * (barWidth + spacing),
+        visualizerCanvas.height - barHeight,
+        barWidth,
+        barHeight,
+      );
+    }
   }
 }
 
@@ -158,19 +197,73 @@ function appendTranscription(text: string, isUser: boolean, isFinal: boolean) {
 }
 
 // --- Main application logic ---
-const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
 
-async function startSession() {
+async function handleGeminiResponse(message: any) {
+  if (message.serverContent?.inputTranscription) {
+    const text = message.serverContent.inputTranscription.text;
+    currentInputTranscription += text;
+    appendTranscription(currentInputTranscription, true, false);
+  } else if (message.serverContent?.outputTranscription) {
+    const text = message.serverContent.outputTranscription.text;
+    statusDiv.textContent = 'Thinking...';
+    currentOutputTranscription += text;
+    appendTranscription(currentOutputTranscription, false, false);
+  }
+
+  if (message.serverContent?.turnComplete) {
+    appendTranscription(currentInputTranscription, true, true);
+    appendTranscription(currentOutputTranscription, false, true);
+    currentInputTranscription = '';
+    currentOutputTranscription = '';
+    if (!isMuted) statusDiv.textContent = 'Listening...';
+  }
+
+  const base64EncodedAudioString =
+    message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
+  if (base64EncodedAudioString) {
+    nextStartTime = Math.max(nextStartTime, outputAudioContext.currentTime);
+    const audioBuffer = await decodeAudioData(
+      decode(base64EncodedAudioString),
+      outputAudioContext,
+      24000,
+      1,
+    );
+    const source = outputAudioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(outputNode);
+    source.addEventListener('ended', () => {
+      sources.delete(source);
+    });
+
+    source.start(nextStartTime);
+    nextStartTime = nextStartTime + audioBuffer.duration;
+    sources.add(source);
+  }
+
+  const interrupted = message.serverContent?.interrupted;
+  if (interrupted) {
+    for (const source of sources.values()) {
+      source.stop();
+      sources.delete(source);
+    }
+    nextStartTime = 0;
+  }
+}
+
+function startSession() {
   statusDiv.textContent = 'Connecting...';
-  sessionPromise = ai.live.connect({
-    model: 'gemini-2.5-flash-native-audio-preview-09-2025',
-    config: {
-      responseModalities: [Modality.AUDIO],
-      inputAudioTranscription: {},
-      outputAudioTranscription: {},
-    },
-    callbacks: {
-      onopen: async () => {
+  const wsUrl = `ws://${window.location.hostname}:3001`;
+  socket = new WebSocket(wsUrl);
+
+  socket.onopen = async () => {
+    console.log('WebSocket connected. Starting session...');
+    socket?.send(JSON.stringify({type: 'start-session'}));
+  };
+
+  socket.onmessage = async (event) => {
+    const message = JSON.parse(event.data);
+    switch (message.type) {
+      case 'session-started':
         statusDiv.textContent = 'Listening...';
         mediaStream = await navigator.mediaDevices.getUserMedia({audio: true});
         mediaStreamSource =
@@ -184,85 +277,55 @@ async function startSession() {
         scriptProcessor.connect(inputAudioContext.destination);
 
         scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
-          if (isMuted) return;
+          if (isMuted || socket?.readyState !== WebSocket.OPEN) return;
           const inputData =
             audioProcessingEvent.inputBuffer.getChannelData(0);
           const pcmBlob = createBlob(inputData);
-          sessionPromise?.then((session) => {
-            session.sendRealtimeInput({media: pcmBlob});
-          });
+          socket.send(JSON.stringify({type: 'audio-data', payload: pcmBlob}));
         };
         drawVisualizer();
-      },
-      onmessage: async (message: LiveServerMessage) => {
-        if (message.serverContent?.inputTranscription) {
-          const text = message.serverContent.inputTranscription.text;
-          currentInputTranscription += text;
-          appendTranscription(currentInputTranscription, true, false);
-        } else if (message.serverContent?.outputTranscription) {
-          const text = message.serverContent.outputTranscription.text;
-          statusDiv.textContent = 'Thinking...';
-          currentOutputTranscription += text;
-          appendTranscription(currentOutputTranscription, false, false);
-        }
-
-        if (message.serverContent?.turnComplete) {
-          appendTranscription(currentInputTranscription, true, true);
-          appendTranscription(currentOutputTranscription, false, true);
-          currentInputTranscription = '';
-          currentOutputTranscription = '';
-          if (!isMuted) statusDiv.textContent = 'Listening...';
-        }
-
-        const base64EncodedAudioString =
-          message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-        if (base64EncodedAudioString) {
-          nextStartTime = Math.max(
-            nextStartTime,
-            outputAudioContext.currentTime,
-          );
-          const audioBuffer = await decodeAudioData(
-            decode(base64EncodedAudioString),
-            outputAudioContext,
-            24000,
-            1,
-          );
-          const source = outputAudioContext.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(outputNode);
-          source.addEventListener('ended', () => {
-            sources.delete(source);
-          });
-
-          source.start(nextStartTime);
-          nextStartTime = nextStartTime + audioBuffer.duration;
-          sources.add(source);
-        }
-
-        const interrupted = message.serverContent?.interrupted;
-        if (interrupted) {
-          for (const source of sources.values()) {
-            source.stop();
-            sources.delete(source);
-          }
-          nextStartTime = 0;
-        }
-      },
-      onerror: (e: ErrorEvent) => {
-        console.error('Error:', e);
-        statusDiv.textContent = `Error: ${e.message}. Please try again.`;
+        break;
+      case 'gemini-response':
+        handleGeminiResponse(message.payload);
+        break;
+      case 'error':
+        console.error('Error from server:', message.message);
+        statusDiv.textContent = `Error: ${message.message}. Please try again.`;
         stopSession();
-      },
-      onclose: () => {
-        console.log('Session closed.');
-      },
-    },
-  });
+        break;
+      case 'session-closed':
+        console.log('Session closed by server.');
+        stopSession();
+        break;
+    }
+  };
+
+  socket.onerror = (error) => {
+    console.error('WebSocket Error:', error);
+    statusDiv.textContent = 'Connection error. Please try again.';
+    stopSession();
+  };
+
+  socket.onclose = () => {
+    console.log('WebSocket disconnected.');
+    if (isSessionActive) {
+      stopSession();
+    }
+  };
 }
 
 function stopSession() {
+  if (!isSessionActive) return;
+
   isSessionActive = false;
   isMuted = false;
+
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({type: 'stop-session'}));
+    socket.close();
+  }
+  socket = null;
+
   callButton.classList.remove('end-call');
   callButton.innerHTML = startCallIcon;
   callButton.setAttribute('aria-label', 'Start call');
@@ -289,11 +352,7 @@ function stopSession() {
   mediaStreamSource = null;
   mediaStream?.getTracks().forEach((track) => track.stop());
   mediaStream = null;
-
-  sessionPromise?.then((session) => {
-    session.close();
-    sessionPromise = null;
-  });
+  smoothedDataArray = null;
 
   currentInputTranscription = '';
   currentOutputTranscription = '';
@@ -323,7 +382,7 @@ callButton.addEventListener('click', async () => {
 
     transcriptionDiv.innerHTML = '';
     visualizerCanvas.style.display = 'block';
-    await startSession();
+    startSession();
   }
 });
 

@@ -3,14 +3,18 @@
 <head>
   <title>Gemini Live Audio Chat</title>
   <link rel="stylesheet" href="index.css">
-  <script type="importmap">
-    {
-      "imports": {
-        "@google/genai": "https://esm.sh/@google/genai@^0.14.0"
-      }
-    }
-  </script>
   <script type="module" src="index.tsx"></script>
+<script type="importmap">
+{
+  "imports": {
+    "express": "https://aistudiocdn.com/express@^5.1.0",
+    "dotenv": "https://aistudiocdn.com/dotenv@^17.2.3",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.24.0",
+    "http": "https://aistudiocdn.com/http@^0.0.1-security",
+    "ws": "https://aistudiocdn.com/ws@^8.18.3"
+  }
+}
+</script>
 </head>
 <body>
   <main>
