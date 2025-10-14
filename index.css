@@ -40,6 +40,18 @@ h1 {
   margin: 0 auto 1.5rem;
 }
 
+#video-preview {
+  display: none;
+  width: 160px;
+  height: 120px;
+  border-radius: 8px;
+  margin: 0 auto 1.5rem;
+  background-color: #eee;
+  border: 1px solid #ddd;
+  transform: scaleX(-1); /* Mirror effect */
+  object-fit: cover;
+}
+
 #controls {
   display: flex;
   justify-content: center;
@@ -48,7 +60,8 @@ h1 {
 }
 
 #call-button,
-#mute-button {
+#mute-button,
+#camera-button {
   width: 70px;
   height: 70px;
   border-radius: 50%;
@@ -76,27 +89,32 @@ h1 {
   animation: pulse 1.5s infinite;
 }
 
-#mute-button {
+#mute-button,
+#camera-button {
   width: 60px;
   height: 60px;
-  background-color: #1877f2; /* Blue for mic */
+  background-color: #1877f2; /* Blue for mic/camera */
 }
 
-#mute-button:hover {
+#mute-button:hover,
+#camera-button:hover {
   background-color: #166fe5;
 }
 
-#mute-button.muted {
-  background-color: #606770; /* Gray for muted */
+#mute-button.muted,
+#camera-button.off {
+  background-color: #606770; /* Gray for muted/off */
 }
 
 #call-button:active,
-#mute-button:active {
+#mute-button:active,
+#camera-button:active {
   transform: scale(0.95);
 }
 
 #call-button svg,
-#mute-button svg {
+#mute-button svg,
+#camera-button svg {
   width: 32px;
   height: 32px;
 }
@@ -153,4 +171,28 @@ h1 {
 
 #transcription p.model strong {
   color: #333;
+}
+
+#transcription p.tool-call {
+  background-color: #fffbe6; /* Light yellow */
+  border-left: 4px solid #ffe58f;
+  color: #614700;
+  text-align: left;
+  margin-right: auto;
+  max-width: 85%;
+  word-wrap: break-word;
+  padding: 0.75rem 1rem;
+}
+
+#transcription p.tool-call strong {
+    display: block;
+    margin-bottom: 0.25rem;
+    color: #d46b08;
+}
+
+#transcription p.tool-call div {
+    margin-top: 0.25rem;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.9em;
+    padding-left: 0.5rem;
 }

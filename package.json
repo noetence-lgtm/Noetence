@@ -1,6 +1,7 @@
 {
   "name": "gemini-live-backend",
   "version": "1.0.0",
+  "type": "module",
   "description": "Backend for Gemini Live Audio Chat",
   "main": "dist/server.js",
   "scripts": {

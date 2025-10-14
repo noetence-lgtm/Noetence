@@ -2,6 +2,7 @@
   "name": "Noetence",
   "description": "Create a live voice agent using bidirectional streaming",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera"
   ]
 }

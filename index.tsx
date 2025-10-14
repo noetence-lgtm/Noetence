@@ -13,6 +13,9 @@ interface GeminiBlob {
 // --- DOM elements ---
 const callButton = document.getElementById('call-button') as HTMLButtonElement;
 const muteButton = document.getElementById('mute-button') as HTMLButtonElement;
+const cameraButton = document.getElementById(
+  'camera-button',
+) as HTMLButtonElement;
 const statusDiv = document.getElementById('status') as HTMLParagraphElement;
 const transcriptionDiv = document.getElementById(
   'transcription',
@@ -20,6 +23,9 @@ const transcriptionDiv = document.getElementById(
 const visualizerCanvas = document.getElementById(
   'visualizer-canvas',
 ) as HTMLCanvasElement;
+const videoPreview = document.getElementById(
+  'video-preview',
+) as HTMLVideoElement;
 const visualizerCtx = visualizerCanvas.getContext('2d');
 
 // --- SVG Icons ---
@@ -27,17 +33,26 @@ const startCallIcon = `<svg xmlns="http://www.w3.org/2000/svg" height="24px" vie
 const endCallIcon = `<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#FFFFFF"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 9c-1.6 0-3.15.25-4.62.72v3.1c0 .34-.23.64-.56.71A4.995 4.995 0 015.02 12C6.11 10.9 7.34 10.01 8.68 9.38c.35-.16.75-.07 1.01.2l1.52 1.52c.24.24.58.32.89.21 1.25-.43 2.45-.93 3.56-1.5l-1.01-1.01c-.31-.32-.31-.85 0-1.17l.71-.71c.18-.18.42-.28.67-.28s.49.1.67.28l2.83 2.83c.18.18.28.42.28.67s-.1.49-.28.67l-2.24 2.24c-.27.27-.68.35-1.02.21-1.23-.52-2.52-1-3.83-1.39-.28-.08-.52-.28-.65-.54l-1.23-2.6c-.24-.51-.81-.79-1.35-.72zM3 4.27l1.41 1.41C4.19 6.05 4 6.51 4 7c0 2.21.9 4.21 2.36 5.64L3 16.27V17h13.73l3 3L21 18.73 4.27 2 3 3.27z"/></svg>`;
 const micOnIcon = `<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#FFFFFF"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.49 6-3.31 6-6.72h-1.7z"/></svg>`;
 const micOffIcon = `<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#FFFFFF"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.34 3 3 3 .23 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.55-.9L19.73 21 21 19.73 4.27 3z"/></svg>`;
+const cameraOnIcon = `<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#FFFFFF"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/></svg>`;
+const cameraOffIcon = `<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#FFFFFF"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.21 0 .39-.08.55-.18L19.73 21 21 19.73 3.27 2z"/></svg>`;
 
 // --- State variables ---
 let isSessionActive = false;
 let isMuted = false;
+let isCameraOn = false;
 let socket: WebSocket | null = null;
 let mediaStream: MediaStream | null = null;
+let videoStream: MediaStream | null = null;
 let scriptProcessor: ScriptProcessorNode | null = null;
 let mediaStreamSource: MediaStreamAudioSourceNode | null = null;
 let analyser: AnalyserNode | null = null;
 let animationFrameId: number | null = null;
+let frameIntervalId: number | null = null;
 let smoothedDataArray: Uint8Array | null = null;
+
+// Canvas for video frame capture
+const frameCanvas = document.createElement('canvas');
+const frameCtx = frameCanvas.getContext('2d');
 
 // --- Audio contexts and helpers ---
 let nextStartTime = 0;
@@ -98,6 +113,76 @@ function createBlob(data: Float32Array): GeminiBlob {
     data: encode(new Uint8Array(int16.buffer)),
     mimeType: 'audio/pcm;rate=16000',
   };
+}
+
+// --- Video functions ---
+const FRAME_RATE = 5; // Send 5 frames per second
+
+function sendVideoFrame() {
+  if (
+    !isCameraOn ||
+    !videoPreview ||
+    socket?.readyState !== WebSocket.OPEN ||
+    !frameCtx
+  ) {
+    return;
+  }
+
+  // Set canvas dimensions to match video to capture the frame correctly
+  frameCanvas.width = videoPreview.videoWidth;
+  frameCanvas.height = videoPreview.videoHeight;
+
+  // Draw the current video frame onto the hidden canvas
+  frameCtx.drawImage(
+    videoPreview,
+    0,
+    0,
+    frameCanvas.width,
+    frameCanvas.height,
+  );
+
+  // Get base64 data URL from the canvas
+  const dataUrl = frameCanvas.toDataURL('image/jpeg', 0.8); // 0.8 quality
+  const base64Data = dataUrl.split(',')[1];
+
+  if (base64Data) {
+    const videoFrameBlob: GeminiBlob = {
+      data: base64Data,
+      mimeType: 'image/jpeg',
+    };
+    socket.send(
+      JSON.stringify({type: 'video-frame', payload: videoFrameBlob}),
+    );
+  }
+}
+
+async function startCamera() {
+  try {
+    videoStream = await navigator.mediaDevices.getUserMedia({video: true});
+    videoPreview.srcObject = videoStream;
+    videoPreview.style.display = 'block';
+    if (frameIntervalId) clearInterval(frameIntervalId);
+    frameIntervalId = window.setInterval(sendVideoFrame, 1000 / FRAME_RATE);
+  } catch (err) {
+    console.error('Error accessing camera:', err);
+    statusDiv.textContent = 'Could not access camera.';
+    // revert state
+    isCameraOn = false;
+    cameraButton.classList.add('off');
+    cameraButton.innerHTML = cameraOffIcon;
+    cameraButton.setAttribute('aria-label', 'Turn on camera');
+  }
+}
+
+function stopCamera() {
+  if (frameIntervalId) {
+    clearInterval(frameIntervalId);
+    frameIntervalId = null;
+  }
+  videoStream?.getTracks().forEach((track) => track.stop());
+  videoStream = null;
+  videoPreview.srcObject = null;
+  videoPreview.style.display = 'none';
 }
 
 // --- Audio Visualizer ---
@@ -164,8 +249,6 @@ function drawVisualizer() {
 }
 
 // --- Transcription display ---
-let currentInputTranscription = '';
-let currentOutputTranscription = '';
 let currentInputParagraph: HTMLParagraphElement | null = null;
 let currentOutputParagraph: HTMLParagraphElement | null = null;
 
@@ -196,59 +279,24 @@ function appendTranscription(text: string, isUser: boolean, isFinal: boolean) {
   transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
 }
 
-// --- Main application logic ---
-
-async function handleGeminiResponse(message: any) {
-  if (message.serverContent?.inputTranscription) {
-    const text = message.serverContent.inputTranscription.text;
-    currentInputTranscription += text;
-    appendTranscription(currentInputTranscription, true, false);
-  } else if (message.serverContent?.outputTranscription) {
-    const text = message.serverContent.outputTranscription.text;
-    statusDiv.textContent = 'Thinking...';
-    currentOutputTranscription += text;
-    appendTranscription(currentOutputTranscription, false, false);
-  }
-
-  if (message.serverContent?.turnComplete) {
-    appendTranscription(currentInputTranscription, true, true);
-    appendTranscription(currentOutputTranscription, false, true);
-    currentInputTranscription = '';
-    currentOutputTranscription = '';
-    if (!isMuted) statusDiv.textContent = 'Listening...';
-  }
-
-  const base64EncodedAudioString =
-    message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-  if (base64EncodedAudioString) {
-    nextStartTime = Math.max(nextStartTime, outputAudioContext.currentTime);
-    const audioBuffer = await decodeAudioData(
-      decode(base64EncodedAudioString),
-      outputAudioContext,
-      24000,
-      1,
-    );
-    const source = outputAudioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(outputNode);
-    source.addEventListener('ended', () => {
-      sources.delete(source);
-    });
-
-    source.start(nextStartTime);
-    nextStartTime = nextStartTime + audioBuffer.duration;
-    sources.add(source);
-  }
-
-  const interrupted = message.serverContent?.interrupted;
-  if (interrupted) {
-    for (const source of sources.values()) {
-      source.stop();
-      sources.delete(source);
-    }
-    nextStartTime = 0;
-  }
+function appendToolCall(
+  toolName: string,
+  toolArgs: object,
+  toolResult: string,
+) {
+  const toolCallParagraph = document.createElement('p');
+  toolCallParagraph.className = 'tool-call';
+  // Use JSON.stringify with indentation for readability
+  const argsString = JSON.stringify(toolArgs, null, 2);
+  toolCallParagraph.innerHTML = `
+    <strong>🔧 Tool Executed</strong>
+    <div><pre><strong>Name:</strong> ${toolName}\n<strong>Arguments:</strong> ${argsString}\n<strong>Result:</strong> ${toolResult}</pre></div>
+  `;
+  transcriptionDiv.appendChild(toolCallParagraph);
+  transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
 }
+
+// --- Main application logic ---
 
 function startSession() {
   statusDiv.textContent = 'Connecting...';
@@ -268,7 +316,7 @@ function startSession() {
         mediaStream = await navigator.mediaDevices.getUserMedia({audio: true});
         mediaStreamSource =
           inputAudioContext.createMediaStreamSource(mediaStream);
-        scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
+        scriptProcessor = inputAudioContext.createScriptProcessor(2048, 1, 1);
         analyser = inputAudioContext.createAnalyser();
         analyser.fftSize = 256;
 
@@ -285,9 +333,59 @@ function startSession() {
         };
         drawVisualizer();
         break;
-      case 'gemini-response':
-        handleGeminiResponse(message.payload);
+
+      case 'user-transcription':
+        appendTranscription(message.text, true, false);
         break;
+
+      case 'gemini-transcription':
+        statusDiv.textContent = 'Thinking...';
+        appendTranscription(message.text, false, false);
+        break;
+
+      case 'turn-complete':
+        appendTranscription(message.finalUserText, true, true);
+        appendTranscription(message.finalModelText, false, true);
+        if (!isMuted) statusDiv.textContent = 'Listening...';
+        break;
+
+      case 'tool-call':
+        appendToolCall(message.toolName, message.toolArgs, message.toolResult);
+        break;
+
+      case 'audio-data':
+        const base64EncodedAudioString = message.data;
+        if (base64EncodedAudioString) {
+          nextStartTime = Math.max(
+            nextStartTime,
+            outputAudioContext.currentTime,
+          );
+          const audioBuffer = await decodeAudioData(
+            decode(base64EncodedAudioString),
+            outputAudioContext,
+            24000,
+            1,
+          );
+          const source = outputAudioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(outputNode);
+          source.addEventListener('ended', () => {
+            sources.delete(source);
+          });
+          source.start(nextStartTime);
+          nextStartTime = nextStartTime + audioBuffer.duration;
+          sources.add(source);
+        }
+        break;
+
+      case 'interrupted':
+        for (const source of sources.values()) {
+          source.stop();
+          sources.delete(source);
+        }
+        nextStartTime = 0;
+        break;
+
       case 'error':
         console.error('Error from server:', message.message);
         statusDiv.textContent = `Error: ${message.message}. Please try again.`;
@@ -320,6 +418,11 @@ function stopSession() {
   isSessionActive = false;
   isMuted = false;
 
+  if (isCameraOn) {
+    isCameraOn = false;
+    stopCamera();
+  }
+
   if (socket?.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify({type: 'stop-session'}));
     socket.close();
@@ -329,7 +432,10 @@ function stopSession() {
   callButton.classList.remove('end-call');
   callButton.innerHTML = startCallIcon;
   callButton.setAttribute('aria-label', 'Start call');
+
   muteButton.style.display = 'none';
+  cameraButton.style.display = 'none';
+
   statusDiv.textContent = 'Click the phone icon to start the conversation';
 
   if (animationFrameId) {
@@ -343,6 +449,7 @@ function stopSession() {
     visualizerCanvas.height,
   );
   visualizerCanvas.style.display = 'none';
+  videoPreview.style.display = 'none';
 
   scriptProcessor?.disconnect();
   scriptProcessor = null;
@@ -354,8 +461,6 @@ function stopSession() {
   mediaStream = null;
   smoothedDataArray = null;
 
-  currentInputTranscription = '';
-  currentOutputTranscription = '';
   currentInputParagraph = null;
   currentOutputParagraph = null;
 }
@@ -379,6 +484,12 @@ callButton.addEventListener('click', async () => {
     muteButton.classList.remove('muted');
     muteButton.innerHTML = micOnIcon;
     muteButton.setAttribute('aria-label', 'Mute microphone');
+
+    cameraButton.style.display = 'inline-flex';
+    cameraButton.classList.add('off');
+    cameraButton.innerHTML = cameraOffIcon;
+    cameraButton.setAttribute('aria-label', 'Turn on camera');
+    isCameraOn = false;
 
     transcriptionDiv.innerHTML = '';
     visualizerCanvas.style.display = 'block';
@@ -405,5 +516,21 @@ muteButton.addEventListener('click', () => {
     muteButton.setAttribute('aria-label', 'Mute microphone');
     statusDiv.textContent = 'Listening...';
     drawVisualizer();
+  }
+});
+
+cameraButton.addEventListener('click', () => {
+  if (!isSessionActive) return;
+  isCameraOn = !isCameraOn;
+  if (isCameraOn) {
+    cameraButton.classList.remove('off');
+    cameraButton.innerHTML = cameraOnIcon;
+    cameraButton.setAttribute('aria-label', 'Turn off camera');
+    startCamera();
+  } else {
+    cameraButton.classList.add('off');
+    cameraButton.innerHTML = cameraOffIcon;
+    cameraButton.setAttribute('aria-label', 'Turn on camera');
+    stopCamera();
   }
 });
