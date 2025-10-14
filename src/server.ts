@@ -13,7 +13,7 @@ import {
 } from '@google/genai';
 import dotenv from 'dotenv';
 import {
-  getTimeForCountry,
+  getCurrentTime,
   getCurrentTimeFunctionDeclaration,
 } from './tools.js';
 
@@ -84,11 +84,11 @@ wss.on('connection', (ws) => {
                   if (
                     fc.name === 'getCurrentTime' &&
                     fc.args &&
-                    typeof fc.args.location === 'string'
+                    typeof fc.args.timezone === 'string'
                   ) {
-                    const location = fc.args.location;
-                    console.log(`Tool call: getCurrentTime for "${location}"`);
-                    const timeResult = getTimeForCountry(location);
+                    const timezone = fc.args.timezone;
+                    console.log(`Tool call: getCurrentTime for timezone "${timezone}"`);
+                    const timeResult = getCurrentTime(timezone);
 
                     // Send result back to Gemini
                     sessionState.session.sendToolResponse({

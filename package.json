@@ -1,13 +1,15 @@
 {
   "name": "gemini-live-backend",
   "version": "1.0.0",
-  "type": "module",
   "description": "Backend for Gemini Live Audio Chat",
   "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",
     "build": "tsc",
-    "dev": "nodemon src/server.ts"
+    "dev": "nodemon --exec 'node --loader ts-node/esm' src/server.ts",
+    "dev:frontend": "vite",
+    "dev:backend": "nodemon --exec 'node --loader ts-node/esm' src/server.ts",
+    "dev:all": "concurrently \"pnpm dev:backend\" \"pnpm dev:frontend\""
   },
   "author": "",
   "license": "Apache-2.0",
@@ -23,6 +25,8 @@
     "@types/ws": "^8.5.10",
     "nodemon": "^3.1.4",
     "ts-node": "^10.9.2",
-    "typescript": "^5.5.2"
+    "typescript": "^5.5.2",
+    "vite": "^5.0.0",
+    "concurrently": "^8.2.2"
   }
 }
