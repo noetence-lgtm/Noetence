@@ -27,6 +27,11 @@ const videoPreview = document.getElementById(
   'video-preview',
 ) as HTMLVideoElement;
 const visualizerCtx = visualizerCanvas.getContext('2d');
+const textInputForm = document.getElementById(
+  'text-input-form',
+) as HTMLFormElement;
+const textInput = document.getElementById('text-input') as HTMLTextAreaElement;
+const sendButton = document.getElementById('send-button') as HTMLButtonElement;
 
 // --- SVG Icons ---
 const startCallIcon = `<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#FFFFFF"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.21-3.73-6.56-6.56l1.97-1.57c.27-.27.35-.66.24-1.01-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.65.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/></svg>`;
@@ -435,6 +440,7 @@ function stopSession() {
 
   muteButton.style.display = 'none';
   cameraButton.style.display = 'none';
+  textInputForm.style.display = 'none';
 
   statusDiv.textContent = 'Click the phone icon to start the conversation';
 
@@ -491,6 +497,9 @@ callButton.addEventListener('click', async () => {
     cameraButton.setAttribute('aria-label', 'Turn on camera');
     isCameraOn = false;
 
+    textInputForm.style.display = 'flex';
+    textInput.value = '';
+
     transcriptionDiv.innerHTML = '';
     visualizerCanvas.style.display = 'block';
     startSession();
@@ -532,5 +541,49 @@ cameraButton.addEventListener('click', () => {
     cameraButton.innerHTML = cameraOffIcon;
     cameraButton.setAttribute('aria-label', 'Turn on camera');
     stopCamera();
+  }
+});
+
+// --- Text input handling ---
+
+// Auto-resize textarea
+textInput.addEventListener('input', () => {
+  textInput.style.height = 'auto';
+  textInput.style.height = `${textInput.scrollHeight}px`;
+});
+
+// Handle text input submission
+async function handleTextSubmit() {
+  const text = textInput.value.trim();
+  if (!text || !socket || socket.readyState !== WebSocket.OPEN) {
+    return;
+  }
+
+  // Display user's text immediately in the transcript
+  const p = document.createElement('p');
+  p.className = 'user';
+  p.innerHTML = `<strong>You:</strong> ${text}`;
+  transcriptionDiv.appendChild(p);
+  transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight;
+
+  // Send to server
+  socket.send(JSON.stringify({type: 'text-input', payload: text}));
+
+  // Clear input
+  textInput.value = '';
+  textInput.style.height = 'auto'; // Reset height
+  textInput.focus();
+}
+
+textInputForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  handleTextSubmit();
+});
+
+textInput.addEventListener('keydown', (e) => {
+  // Submit on Enter, new line on Shift+Enter
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    handleTextSubmit();
   }
 });

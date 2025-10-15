@@ -193,6 +193,12 @@ wss.on('connection', (ws) => {
       if (sessionState) {
         sessionState.session.sendRealtimeInput({ media: data.payload });
       }
+    } else if (data.type === 'text-input') {
+      const sessionState = sessions.get(ws);
+      if (sessionState) {
+        console.log(`Received text input: "${data.payload}"`);
+        sessionState.session.sendRealtimeInput({ text: data.payload });
+      }
     } else if (data.type === 'stop-session') {
       console.log('Stopping session...');
       const sessionState = sessions.get(ws);

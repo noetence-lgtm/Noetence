@@ -23,12 +23,20 @@
     <canvas id="visualizer-canvas" height="60px"></canvas>
     <video id="video-preview" autoplay muted playsinline></video>
     <div id="controls">
-      <button id="call-button" aria-label="Start call">
-        <!-- Start Call Icon -->
-        <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#FFFFFF"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.21-3.73-6.56-6.56l1.97-1.57c.27-.27.35-.66.24-1.01-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.65.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/></svg>
-      </button>
-      <button id="mute-button" aria-label="Mute microphone" style="display: none;"></button>
-      <button id="camera-button" aria-label="Turn on camera" style="display: none;"></button>
+      <div id="call-controls">
+        <button id="call-button" aria-label="Start call">
+          <!-- Start Call Icon -->
+          <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#FFFFFF"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.21-3.73-6.56-6.56l1.97-1.57c.27-.27.35-.66.24-1.01-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.65.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/></svg>
+        </button>
+        <button id="mute-button" aria-label="Mute microphone" style="display: none;"></button>
+        <button id="camera-button" aria-label="Turn on camera" style="display: none;"></button>
+      </div>
+      <form id="text-input-form" style="display: none;">
+        <textarea id="text-input" placeholder="Type a message..." rows="1"></textarea>
+        <button id="send-button" type="submit" aria-label="Send message">
+          <svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#FFFFFF"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2 .01 7z"/></svg>
+        </button>
+      </form>
     </div>
     <div id="transcription"><p>Your conversation will appear here.</p></div>
   </main>
