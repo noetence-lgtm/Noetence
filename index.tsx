@@ -4,7 +4,6 @@
  */
 
 // --- Custom Types ---
-// FIX: Renamed Blob to GeminiBlob to avoid conflict with the built-in DOM Blob type.
 interface GeminiBlob {
   data: string;
   mimeType: string;
@@ -54,7 +53,7 @@ let analyser: AnalyserNode | null = null;
 let animationFrameId: number | null = null;
 let frameIntervalId: number | null = null;
 let smoothedDataArray: Uint8Array | null = null;
-let interruptionCounter = 0;
+let isModelSpeaking = false; // Track if model is currently speaking
 
 // Canvas for video frame capture
 const frameCanvas = document.createElement('canvas');
@@ -108,7 +107,6 @@ async function decodeAudioData(
   return buffer;
 }
 
-// FIX: Updated return type to GeminiBlob to match the custom interface.
 function createBlob(data: Float32Array): GeminiBlob {
   const l = data.length;
   const int16 = new Int16Array(l);
@@ -121,8 +119,23 @@ function createBlob(data: Float32Array): GeminiBlob {
   };
 }
 
+// CRITICAL FIX: Better audio interruption handling
+function stopAllAudio() {
+  // Stop all currently playing audio sources
+  for (const source of sources.values()) {
+    try {
+      source.stop();
+    } catch (e) {
+      // Source might already be stopped
+    }
+    sources.delete(source);
+  }
+  // Reset the timing completely
+  nextStartTime = outputAudioContext.currentTime;
+}
+
 // --- Video functions ---
-const FRAME_RATE = 5; // Send 5 frames per second
+const FRAME_RATE = 5;
 
 function sendVideoFrame() {
   if (
@@ -134,11 +147,9 @@ function sendVideoFrame() {
     return;
   }
 
-  // Set canvas dimensions to match video to capture the frame correctly
   frameCanvas.width = videoPreview.videoWidth;
   frameCanvas.height = videoPreview.videoHeight;
 
-  // Draw the current video frame onto the hidden canvas
   frameCtx.drawImage(
     videoPreview,
     0,
@@ -147,8 +158,7 @@ function sendVideoFrame() {
     frameCanvas.height,
   );
 
-  // Get base64 data URL from the canvas
-  const dataUrl = frameCanvas.toDataURL('image/jpeg', 0.8); // 0.8 quality
+  const dataUrl = frameCanvas.toDataURL('image/jpeg', 0.8);
   const base64Data = dataUrl.split(',')[1];
 
   if (base64Data) {
@@ -172,7 +182,6 @@ async function startCamera() {
   } catch (err) {
     console.error('Error accessing camera:', err);
     statusDiv.textContent = 'Could not access camera.';
-    // revert state
     isCameraOn = false;
     cameraButton.classList.add('off');
     cameraButton.innerHTML = cameraOffIcon;
@@ -201,7 +210,7 @@ function drawVisualizer() {
 
   animationFrameId = requestAnimationFrame(drawVisualizer);
 
-  const bufferLength = analyser.frequencyBinCount; // e.g., 128
+  const bufferLength = analyser.frequencyBinCount;
   if (!smoothedDataArray) {
     smoothedDataArray = new Uint8Array(bufferLength).fill(0);
   }
@@ -292,7 +301,6 @@ function appendToolCall(
 ) {
   const toolCallParagraph = document.createElement('p');
   toolCallParagraph.className = 'tool-call';
-  // Use JSON.stringify with indentation for readability
   const argsString = JSON.stringify(toolArgs, null, 2);
   toolCallParagraph.innerHTML = `
     <strong>🔧 Tool Executed</strong>
@@ -322,7 +330,7 @@ function startSession() {
         mediaStream = await navigator.mediaDevices.getUserMedia({audio: true});
         mediaStreamSource =
           inputAudioContext.createMediaStreamSource(mediaStream);
-        scriptProcessor = inputAudioContext.createScriptProcessor(1024, 1, 1);
+        scriptProcessor = inputAudioContext.createScriptProcessor(2048, 1, 1);
         analyser = inputAudioContext.createAnalyser();
         analyser.fftSize = 256;
 
@@ -335,6 +343,8 @@ function startSession() {
           const inputData =
             audioProcessingEvent.inputBuffer.getChannelData(0);
           const pcmBlob = createBlob(inputData);
+          // --- Requested change: log when sending audio chunks ---
+          console.log(`[Audio] Sending chunk — ${inputData.length} samples`);
           socket.send(JSON.stringify({type: 'audio-data', payload: pcmBlob}));
         };
         drawVisualizer();
@@ -345,11 +355,13 @@ function startSession() {
         break;
 
       case 'gemini-transcription':
-        statusDiv.textContent = 'Thinking...';
+        isModelSpeaking = true;
+        statusDiv.textContent = 'Gemini is speaking...';
         appendTranscription(message.text, false, false);
         break;
 
       case 'turn-complete':
+        isModelSpeaking = false;
         appendTranscription(message.finalUserText, true, true);
         appendTranscription(message.finalModelText, false, true);
         if (!isMuted) statusDiv.textContent = 'Listening...';
@@ -362,58 +374,44 @@ function startSession() {
       case 'audio-data':
         const base64EncodedAudioString = message.data;
         if (base64EncodedAudioString) {
-          // Capture the interruption state at the time of receiving the message.
-          const currentInterruptionCount = interruptionCounter;
-
-          // Defer decoding and playback to avoid blocking the main thread,
-          // which could delay sending user's audio for interruption.
-          setTimeout(async () => {
-            // Only process audio if the session is still active and no interruption has occurred.
-            if (
-              !isSessionActive ||
-              interruptionCounter !== currentInterruptionCount
-            ) {
-              return;
+          nextStartTime = Math.max(
+            nextStartTime,
+            outputAudioContext.currentTime,
+          );
+          const audioBuffer = await decodeAudioData(
+            decode(base64EncodedAudioString),
+            outputAudioContext,
+            24000,
+            1,
+          );
+          const source = outputAudioContext.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(outputNode);
+          source.addEventListener('ended', () => {
+            sources.delete(source);
+            // Check if all audio finished playing
+            if (sources.size === 0 && isModelSpeaking) {
+              isModelSpeaking = false;
+              if (!isMuted) statusDiv.textContent = 'Listening...';
             }
-
-            try {
-              nextStartTime = Math.max(
-                nextStartTime,
-                outputAudioContext.currentTime,
-              );
-              const audioBuffer = await decodeAudioData(
-                decode(base64EncodedAudioString),
-                outputAudioContext,
-                24000,
-                1,
-              );
-              const source = outputAudioContext.createBufferSource();
-              source.buffer = audioBuffer;
-              source.connect(outputNode);
-              source.addEventListener('ended', () => {
-                sources.delete(source);
-              });
-              source.start(nextStartTime);
-              nextStartTime = nextStartTime + audioBuffer.duration;
-              sources.add(source);
-            } catch (error) {
-              console.error('Error processing incoming audio:', error);
-            }
-          }, 0);
+          });
+          source.start(nextStartTime);
+          nextStartTime = nextStartTime + audioBuffer.duration;
+          sources.add(source);
         }
         break;
 
       case 'interrupted':
-        statusDiv.textContent = 'Thinking...';
-        interruptionCounter++; // Invalidate any pending audio callbacks
-        // Stop all playing and queued audio sources.
-        for (const source of sources) {
-          source.stop();
+        // CRITICAL FIX: Properly handle interruption
+        console.log('Model was interrupted, stopping audio playback');
+        isModelSpeaking = false;
+        stopAllAudio();
+        // Clear the incomplete model transcription
+        if (currentOutputParagraph) {
+          currentOutputParagraph.remove();
+          currentOutputParagraph = null;
         }
-        // Clear the queue of sources.
-        sources.clear();
-        // Reset the playback start time.
-        nextStartTime = 0;
+        if (!isMuted) statusDiv.textContent = 'Listening...';
         break;
 
       case 'error':
@@ -507,7 +505,7 @@ callButton.addEventListener('click', async () => {
       await outputAudioContext.resume();
     }
     isSessionActive = true;
-    interruptionCounter = 0; // Reset on new call
+    // interruptionCounter = 0; // Reset on new call
     callButton.classList.add('end-call');
     callButton.innerHTML = endCallIcon;
     callButton.setAttribute('aria-label', 'End call');

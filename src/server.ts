@@ -42,7 +42,7 @@ if (!API_KEY) {
 
 console.log('✓ API key loaded successfully');
 
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+const ai = new GoogleGenAI({ httpOptions: {"apiVersion": "v1alpha"},apiKey: API_KEY });
 
 interface SessionState {
   session: any; // The Gemini session object
@@ -65,9 +65,13 @@ wss.on('connection', (ws) => {
           model: 'gemini-2.5-flash-native-audio-preview-09-2025',
           config: {
             responseModalities: [Modality.AUDIO],
+            enableAffectiveDialog: true,
             inputAudioTranscription: {},
             outputAudioTranscription: {},
-            tools: [{ functionDeclarations: [getCurrentTimeFunctionDeclaration] }],
+            tools: [
+              { googleSearch: {} },
+              { functionDeclarations: [getCurrentTimeFunctionDeclaration] },
+            ],
           },
           callbacks: {
             onopen: () => {
@@ -135,6 +139,18 @@ wss.on('connection', (ws) => {
                   );
                 }
 
+                // Log Google Search usage
+                if (serverContent.modelTurn?.parts) {
+                  for (const part of serverContent.modelTurn.parts) {
+                    if (part.executableCode) {
+                      console.log('🔍 Google Search used - executableCode: %s', part.executableCode.code);
+                    }
+                    if (part.codeExecutionResult) {
+                      console.log('🔍 Google Search result - codeExecutionResult: %s', part.codeExecutionResult.output);
+                    }
+                  }
+                }
+
                 const audioData =
                   serverContent.modelTurn?.parts?.[0]?.inlineData?.data;
                 if (audioData) {
@@ -142,6 +158,7 @@ wss.on('connection', (ws) => {
                 }
 
                 if (serverContent.interrupted) {
+                  console.log('Model was interrupted');
                   ws.send(JSON.stringify({ type: 'interrupted' }));
                 }
 
