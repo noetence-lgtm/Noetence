@@ -54,6 +54,7 @@ let analyser: AnalyserNode | null = null;
 let animationFrameId: number | null = null;
 let frameIntervalId: number | null = null;
 let smoothedDataArray: Uint8Array | null = null;
+let interruptionCounter = 0;
 
 // Canvas for video frame capture
 const frameCanvas = document.createElement('canvas');
@@ -321,7 +322,7 @@ function startSession() {
         mediaStream = await navigator.mediaDevices.getUserMedia({audio: true});
         mediaStreamSource =
           inputAudioContext.createMediaStreamSource(mediaStream);
-        scriptProcessor = inputAudioContext.createScriptProcessor(2048, 1, 1);
+        scriptProcessor = inputAudioContext.createScriptProcessor(1024, 1, 1);
         analyser = inputAudioContext.createAnalyser();
         analyser.fftSize = 256;
 
@@ -361,33 +362,57 @@ function startSession() {
       case 'audio-data':
         const base64EncodedAudioString = message.data;
         if (base64EncodedAudioString) {
-          nextStartTime = Math.max(
-            nextStartTime,
-            outputAudioContext.currentTime,
-          );
-          const audioBuffer = await decodeAudioData(
-            decode(base64EncodedAudioString),
-            outputAudioContext,
-            24000,
-            1,
-          );
-          const source = outputAudioContext.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(outputNode);
-          source.addEventListener('ended', () => {
-            sources.delete(source);
-          });
-          source.start(nextStartTime);
-          nextStartTime = nextStartTime + audioBuffer.duration;
-          sources.add(source);
+          // Capture the interruption state at the time of receiving the message.
+          const currentInterruptionCount = interruptionCounter;
+
+          // Defer decoding and playback to avoid blocking the main thread,
+          // which could delay sending user's audio for interruption.
+          setTimeout(async () => {
+            // Only process audio if the session is still active and no interruption has occurred.
+            if (
+              !isSessionActive ||
+              interruptionCounter !== currentInterruptionCount
+            ) {
+              return;
+            }
+
+            try {
+              nextStartTime = Math.max(
+                nextStartTime,
+                outputAudioContext.currentTime,
+              );
+              const audioBuffer = await decodeAudioData(
+                decode(base64EncodedAudioString),
+                outputAudioContext,
+                24000,
+                1,
+              );
+              const source = outputAudioContext.createBufferSource();
+              source.buffer = audioBuffer;
+              source.connect(outputNode);
+              source.addEventListener('ended', () => {
+                sources.delete(source);
+              });
+              source.start(nextStartTime);
+              nextStartTime = nextStartTime + audioBuffer.duration;
+              sources.add(source);
+            } catch (error) {
+              console.error('Error processing incoming audio:', error);
+            }
+          }, 0);
         }
         break;
 
       case 'interrupted':
-        for (const source of sources.values()) {
+        statusDiv.textContent = 'Thinking...';
+        interruptionCounter++; // Invalidate any pending audio callbacks
+        // Stop all playing and queued audio sources.
+        for (const source of sources) {
           source.stop();
-          sources.delete(source);
         }
+        // Clear the queue of sources.
+        sources.clear();
+        // Reset the playback start time.
         nextStartTime = 0;
         break;
 
@@ -482,6 +507,7 @@ callButton.addEventListener('click', async () => {
       await outputAudioContext.resume();
     }
     isSessionActive = true;
+    interruptionCounter = 0; // Reset on new call
     callButton.classList.add('end-call');
     callButton.innerHTML = endCallIcon;
     callButton.setAttribute('aria-label', 'End call');
