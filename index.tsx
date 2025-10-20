@@ -406,10 +406,14 @@ function startSession() {
         console.log('Model was interrupted, stopping audio playback');
         isModelSpeaking = false;
         stopAllAudio();
-        // Clear the incomplete model transcription
+        // Finalize (but don't remove) the incomplete model transcription.
         if (currentOutputParagraph) {
-          currentOutputParagraph.remove();
+          currentOutputParagraph.classList.add('interrupted');
           currentOutputParagraph = null;
+        }
+        // Also finalize the user's transcription that caused the interruption.
+        if (currentInputParagraph) {
+          currentInputParagraph = null;
         }
         if (!isMuted) statusDiv.textContent = 'Listening...';
         break;

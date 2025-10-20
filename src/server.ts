@@ -48,6 +48,7 @@ interface SessionState {
   session: any; // The Gemini session object
   currentInputTranscription: string;
   currentOutputTranscription: string;
+  wasInterrupted: boolean;
 }
 
 const sessions = new Map<WebSocket, SessionState>();
@@ -160,18 +161,26 @@ wss.on('connection', (ws) => {
                 if (serverContent.interrupted) {
                   console.log('Model was interrupted');
                   ws.send(JSON.stringify({ type: 'interrupted' }));
+                  // Set flag to handle the following turnComplete message
+                  sessionState.wasInterrupted = true;
                 }
 
                 if (serverContent.turnComplete) {
-                  ws.send(
-                    JSON.stringify({
-                      type: 'turn-complete',
-                      finalUserText: sessionState.currentInputTranscription,
-                      finalModelText: sessionState.currentOutputTranscription,
-                    }),
-                  );
+                  // If the turn completes after an interruption, the client has already
+                  // handled the UI finalization. Sending this can cause blank entries.
+                  if (!sessionState.wasInterrupted) {
+                    ws.send(
+                      JSON.stringify({
+                        type: 'turn-complete',
+                        finalUserText: sessionState.currentInputTranscription,
+                        finalModelText: sessionState.currentOutputTranscription,
+                      }),
+                    );
+                  }
+                  // Reset state for the next turn.
                   sessionState.currentInputTranscription = '';
                   sessionState.currentOutputTranscription = '';
+                  sessionState.wasInterrupted = false; // Reset the flag
                 }
               }
             },
@@ -190,6 +199,7 @@ wss.on('connection', (ws) => {
           session,
           currentInputTranscription: '',
           currentOutputTranscription: '',
+          wasInterrupted: false,
         });
       } catch (error: any) {
         console.error('Failed to start session:', error);

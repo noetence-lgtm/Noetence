@@ -230,6 +230,11 @@ h1 {
   word-wrap: break-word;
 }
 
+#transcription p.model.interrupted {
+  opacity: 0.8;
+  font-style: italic;
+}
+
 #transcription p strong {
   color: #0d47a1;
 }
