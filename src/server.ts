@@ -66,7 +66,7 @@ wss.on('connection', (ws) => {
           model: 'gemini-2.5-flash-native-audio-preview-09-2025',
           config: {
             responseModalities: [Modality.AUDIO],
-            enableAffectiveDialog: true,
+            proactivity: { proactiveAudio: true },
             inputAudioTranscription: {},
             outputAudioTranscription: {},
             tools: [
@@ -122,7 +122,7 @@ wss.on('connection', (ws) => {
               if (serverContent) {
                 if (serverContent.inputTranscription) {
                   sessionState.currentInputTranscription +=
-                    serverContent.inputTranscription.text;
+                    serverContent.inputTranscription.text || '';
                   ws.send(
                     JSON.stringify({
                       type: 'user-transcription',
@@ -131,7 +131,7 @@ wss.on('connection', (ws) => {
                   );
                 } else if (serverContent.outputTranscription) {
                   sessionState.currentOutputTranscription +=
-                    serverContent.outputTranscription.text;
+                    serverContent.outputTranscription.text || '';
                   ws.send(
                     JSON.stringify({
                       type: 'gemini-transcription',
