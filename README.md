@@ -68,10 +68,10 @@ Open your terminal and run:
 
 ```bash
 # Clone the repository
-git clone <your-repo-url>
+git clone [<your-repo-url>](https://github.com/noetence-lgtm/Noetence.git)
 
 # Navigate into the project directory
-cd gemini-live-audio-chat
+cd Noetence
 ```
 
 **Alternative**: Download as ZIP
